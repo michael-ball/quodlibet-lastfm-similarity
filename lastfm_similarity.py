@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import json
 import urllib2
+import random
 
 from gi.repository import GLib
 
@@ -13,7 +14,7 @@ from quodlibet.query import Query
 from quodlibet.util.dprint import print_d
 
 
-pconfig = PluginConfig("notify")
+pconfig = PluginConfig("lastfm_similarity")
 pconfig.defaults.set("blacklist_track_count", 10)
 pconfig.defaults.set("blacklist_artist_count", 10)
 
@@ -38,16 +39,22 @@ class LastFMSimilarity(EventPlugin):
         self._last_artists = []
 
     def _check_artist_played(self, artist):
-        if artist in self._last_artists:
-            return True
-        else:
-            return False
+        for played_artist in self._last_artists:
+            if unicode(artist).upper() == played_artist.upper():
+                return True
+
+        return False
 
     def _check_track_played(self, track):
         if track in self._last_tracks:
             return True
         else:
             return False
+
+    def _add_played_artists(self, artists):
+        for artist in artists:
+            if artist not in self._last_artists:
+                self._last_artists.append(artist)
 
     def _build_uri(self, request):
         return "".join((self.LAST_FM_API_URI, request, "&api_key=",
@@ -58,10 +65,13 @@ class LastFMSimilarity(EventPlugin):
                            self.LAST_FM_API_METHODS["similar_tracks"]))
 
         if mbid:
+            print_d("Trying with mbid {}".format(mbid))
             request = "".join((request, "&mbid=", mbid))
         else:
+            print_d("Trying with {} - {}".format(artistname.splitlines()[0],
+                                                 trackname))
             request = "".join((request, "&track=", trackname, "&artist=",
-                               artistname))
+                               artistname.splitlines()[0]))
 
         request = "".join((request, "&limit={}".format(limit)))
 
@@ -87,6 +97,9 @@ class LastFMSimilarity(EventPlugin):
                 return similar_tracks
 
             except KeyError:
+                if mbid:
+                    return self._find_similar_tracks(trackname, artistname)
+
                 return []
 
         else:
@@ -97,9 +110,12 @@ class LastFMSimilarity(EventPlugin):
                            self.LAST_FM_API_METHODS["similar_artists"]))
 
         if mbid:
+            print_d("Trying with artist mbid {}".format(mbid))
             request = "".join((request, "&mbid=", mbid))
         else:
-            request = "".join((request, "&artist=", artistname))
+            print_d("Trying with {}".format(artistname.splitlines()[0]))
+            request = "".join((request, "&artist=",
+                               artistname.splitlines()[0]))
 
         request = "".join((request, "&limit={}".format(limit)))
 
@@ -124,13 +140,16 @@ class LastFMSimilarity(EventPlugin):
                 return similar_artists
 
             except KeyError:
+                if mbid:
+                    return self._find_similar_artists(artistname)
+
                 return []
 
         else:
             return []
 
     def on_change(self, song):
-        artist = song.get("artist")
+        artist = song.get("artist").splitlines()[0]
         track = song.get("title")
 
         candidates = []
@@ -149,10 +168,6 @@ class LastFMSimilarity(EventPlugin):
                     print_d("[similarity] found track match: %s - %s"
                             % (candidate[0], candidate[1]))
 
-                    if (len(self._last_tracks)
-                            == pconfig.getint("blacklist_track_count")):
-                        del self._last_tracks[0]
-
                     query = Query.StrictQueryMatcher(
                         "&(artist = \"%s\", title = \"%s\")"
                         % (candidate[0], candidate[1]))
@@ -164,15 +179,6 @@ class LastFMSimilarity(EventPlugin):
 
                             if self._check_track_played(song.get("~filename")):
                                 continue
-
-                            self._last_tracks.append(song.get("~filename"))
-
-                            if (len(self._last_artists)
-                                    == pconfig.getint(
-                                        "blacklist_artist_count")):
-                                del self._last_artists[0]
-
-                            self._last_artists.append(song.get("artist"))
 
                             app.window.playlist.enqueue([song])
 
@@ -191,32 +197,35 @@ class LastFMSimilarity(EventPlugin):
                 try:
                     results = filter(query.search, app.library)
 
-                    for song in results:
-                        if self._check_track_played(song.get("~filename")):
-                            continue
+                    candidate_song_length = len(results)
+                    for dummy in xrange(candidate_song_length):
+                        idx = random.randint(0, (candidate_song_length - 1))
+                        song = results[idx]
 
-                        if (len(self._last_artists)
-                                == pconfig.getint("blacklist_artist_count")):
-                            del self._last_artists[0]
+                        if not self._check_track_played(song.get("~filename")):
+                            app.window.playlist.enqueue([song])
+                            return
 
-                        self._last_artists.append(song.get("artist"))
-                        self._last_tracks.append(song.get("~filename"))
-
-                        app.window.playlist.enqueue([song])
-                        return
                 except AttributeError:
                     pass
 
     def plugin_on_song_started(self, song):
         self._last_tracks.append(song.get("~filename"))
-        self._last_artists.append(song.get("artist"))
+        self._add_played_artists(song.get("artist").splitlines())
 
         GLib.idle_add(self.on_change, song)
 
     def plugin_on_song_ended(self, song, stopped):
 
-        if len(self._last_tracks) == pconfig.getint("blacklist_track_count"):
-            del self._last_tracks[0]
+        track_count = len(self._last_tracks)
+        artist_count = len(self._last_artists)
+        max_track_count = pconfig.getint("blacklist_track_count")
+        max_artist_count = pconfig.getint("blacklist_artist_count")
 
-        if len(self._last_artists) == pconfig.getint("blacklist_artist_count"):
-            del self._last_artists[0]
+        if track_count > max_track_count:
+            self._last_tracks = self._last_tracks[
+                (track_count - max_track_count):track_count]
+
+        if artist_count > max_artist_count:
+            self._last_artists = self._last_artists[
+                (artist_count - max_artist_count):artist_count]
