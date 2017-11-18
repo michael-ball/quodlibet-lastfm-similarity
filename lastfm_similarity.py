@@ -244,8 +244,4 @@ class LastFMSimilarity(EventPlugin):
 
         if artist_count > self._blacklist_artist_count:
             self._last_artists = self._last_artists[
-<<<<<<< HEAD
-                (artist_count - max_artist_count):artist_count]
-=======
                 (artist_count - self._blacklist_artist_count):artist_count]
->>>>>>> 8362451... Add preferences
