@@ -78,7 +78,7 @@ class LastFMSimilarity(EventPlugin):
         return "".join((self.LAST_FM_API_URI, request, "&api_key=",
                         self.API_KEY, "&format=json"))
 
-    def _find_similar_tracks(self, trackname, artistname, mbid=None, limit=20):
+    def _find_similar_tracks(self, trackname, artistname, mbid=None, limit=50):
         request = "".join(("?method=",
                            self.LAST_FM_API_METHODS["similar_tracks"]))
 
@@ -123,7 +123,7 @@ class LastFMSimilarity(EventPlugin):
         else:
             return []
 
-    def _find_similar_artists(self, artistname, mbid=None, limit=20):
+    def _find_similar_artists(self, artistname, mbid=None, limit=40):
         request = "".join(("?method=",
                            self.LAST_FM_API_METHODS["similar_artists"]))
 
