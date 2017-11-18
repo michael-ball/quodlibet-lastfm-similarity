@@ -5,18 +5,11 @@ import random
 
 from gi.repository import GLib
 
-from quodlibet import _
-from quodlibet import app
+from quodlibet import _, app, config
 from quodlibet.plugins.events import EventPlugin
-from quodlibet.plugins import PluginConfig
 from quodlibet.qltk import Icons
 from quodlibet.query import Query
 from quodlibet.util.dprint import print_d
-
-
-pconfig = PluginConfig("lastfm_similarity")
-pconfig.defaults.set("blacklist_track_count", 10)
-pconfig.defaults.set("blacklist_artist_count", 10)
 
 
 class LastFMSimilarity(EventPlugin):
@@ -35,8 +28,33 @@ class LastFMSimilarity(EventPlugin):
     }
 
     def __init__(self):
+        self._blacklist_track_count = config.getint("plugins", "lastfm_similarity_blacklist_tracks", 10)
+        self._blacklist_artist_count = config.getint("plugins", "lastfm_similarity_blacklist_artists", 10)
         self._last_tracks = []
         self._last_artists = []
+
+
+    def PluginPreferences(self, parent):
+        def blacklist_track_changed(entry):
+            self._blacklist_track_count = int(entry.get_value())
+            config.set("plugins", "lastfm_similarity_blacklist_tracks", self._blacklist_track_count)
+
+        def blacklist_artist_changed(entry):
+            self._blacklist_artist_count = int(entry.get_value())
+            config.set("plugins", "lastfm_similarity_blacklist_artist", self._blacklist_artist_count)
+
+        table = Gtk.Table(rows=2, columns=2)
+        table.set_row_spacings(6)
+        table.set_col_spacings(6)
+        table.attach(Gtk.Label(label=_("Number of recently played tracks to blacklist:")), 0, 1, 0, 1)
+        track_entry = Gtk.SpinButton(adjustment=Gtk.Adjustment.new(self._blacklist_track_count, 0, 1000, 1, 10, 0))
+        track_entry.connect("value-changed", blacklist_track_changed)
+        table.attach(track_entry, 1, 2, 0, 1)
+        table.attach(Gtk.Label(label=_("Number of recently played artists to blacklist:")), 0, 1, 1, 2)
+        artist_entry = Gtk.SpinButton(adjustment=Gtk.Adjustment.new(self._blacklist_artist_count, 0, 1000, 1, 10, 0))
+        artist_entry.connect("value-changed", blacklist_artist_changed)
+        table.attach(artist_entry, 1, 2, 1, 2)
+        return table
 
     def _check_artist_played(self, artist):
         for played_artist in self._last_artists:
@@ -219,13 +237,15 @@ class LastFMSimilarity(EventPlugin):
 
         track_count = len(self._last_tracks)
         artist_count = len(self._last_artists)
-        max_track_count = pconfig.getint("blacklist_track_count")
-        max_artist_count = pconfig.getint("blacklist_artist_count")
 
-        if track_count > max_track_count:
+        if track_count > self._blacklist_track_count:
             self._last_tracks = self._last_tracks[
-                (track_count - max_track_count):track_count]
+                (track_count - self._blacklist_track_count):track_count]
 
-        if artist_count > max_artist_count:
+        if artist_count > self._blacklist_artist_count:
             self._last_artists = self._last_artists[
+<<<<<<< HEAD
                 (artist_count - max_artist_count):artist_count]
+=======
+                (artist_count - self._blacklist_artist_count):artist_count]
+>>>>>>> 8362451... Add preferences
