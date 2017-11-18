@@ -3,7 +3,7 @@ import json
 import urllib2
 import random
 
-from gi.repository import GLib
+from gi.repository import GLib, Gtk
 
 from quodlibet import _, app, config
 from quodlibet.plugins.events import EventPlugin
