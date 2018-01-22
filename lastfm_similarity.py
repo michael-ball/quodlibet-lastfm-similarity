@@ -28,32 +28,63 @@ class LastFMSimilarity(EventPlugin):
     }
 
     def __init__(self):
-        self._blacklist_track_count = config.getint("plugins", "lastfm_similarity_blacklist_tracks", 10)
-        self._blacklist_artist_count = config.getint("plugins", "lastfm_similarity_blacklist_artists", 10)
+        self._blacklist_track_count = config.getint(
+            "plugins", "lastfm_similarity_blacklist_tracks", 10)
+        self._blacklist_artist_count = config.getint(
+            "plugins", "lastfm_similarity_blacklist_artists", 10)
+        self._similarity_strictness = config.getfloat(
+            "plugins", "lastfm_similarity_strictness", 0.5)
         self._last_tracks = []
         self._last_artists = []
-
 
     def PluginPreferences(self, parent):
         def blacklist_track_changed(entry):
             self._blacklist_track_count = int(entry.get_value())
-            config.set("plugins", "lastfm_similarity_blacklist_tracks", self._blacklist_track_count)
+            config.set("plugins", "lastfm_similarity_blacklist_tracks",
+                       self._blacklist_track_count)
 
         def blacklist_artist_changed(entry):
             self._blacklist_artist_count = int(entry.get_value())
-            config.set("plugins", "lastfm_similarity_blacklist_artist", self._blacklist_artist_count)
+            config.set("plugins", "lastfm_similarity_blacklist_artist",
+                       self._blacklist_artist_count)
 
-        table = Gtk.Table(rows=2, columns=2)
+        def strictness_changed(entry):
+            self._similarity_strictness = entry.get_value() / 10
+            config.set("plugins", "lastfm_similarity_strictness",
+                       self._track_similarity_strictness)
+
+        table = Gtk.Table(rows=3, columns=2)
         table.set_row_spacings(6)
         table.set_col_spacings(6)
-        table.attach(Gtk.Label(label=_("Number of recently played tracks to blacklist:")), 0, 1, 0, 1)
-        track_entry = Gtk.SpinButton(adjustment=Gtk.Adjustment.new(self._blacklist_track_count, 0, 1000, 1, 10, 0))
+        track_label = Gtk.Label(label=_(
+            "Number of recently played tracks to blacklist:"))
+        track_label.set_alignment(1.0, 0.0)
+        table.attach(track_label, 0, 1, 0, 1, xoptions=Gtk.AttachOptions.FILL)
+        track_entry = Gtk.SpinButton(adjustment=Gtk.Adjustment.new(
+            self._blacklist_track_count, 0, 1000, 1, 10, 0))
         track_entry.connect("value-changed", blacklist_track_changed)
         table.attach(track_entry, 1, 2, 0, 1)
-        table.attach(Gtk.Label(label=_("Number of recently played artists to blacklist:")), 0, 1, 1, 2)
-        artist_entry = Gtk.SpinButton(adjustment=Gtk.Adjustment.new(self._blacklist_artist_count, 0, 1000, 1, 10, 0))
+        artist_label = Gtk.Label(label=_(
+            "Number of recently played artists to blacklist:"))
+        artist_label.set_alignment(1.0, 0)
+        table.attach(artist_label, 0, 1, 1, 2, xoptions=Gtk.AttachOptions.FILL)
+        artist_entry = Gtk.SpinButton(adjustment=Gtk.Adjustment.new(
+            self._blacklist_artist_count, 0, 1000, 1, 10, 0))
         artist_entry.connect("value-changed", blacklist_artist_changed)
         table.attach(artist_entry, 1, 2, 1, 2)
+        strictness_label = Gtk.Label(label=_("Similarity strictness:"))
+        strictness_label.set_alignment(1.0, 0.0)
+        table.attach(strictness_label, 0, 1, 2, 3,
+                     xoptions=Gtk.AttachOptions.FILL)
+        strictness_adj = Gtk.Adjustment(lower=0.00, upper=10.00,
+                                        step_increment=0.1)
+        strictness_hscale = Gtk.HScale(adjustment=strictness_adj)
+        strictness_hscale.set_value(self._similarity_strictness * 10)
+        strictness_hscale.set_draw_value(False)
+        strictness_hscale.set_show_fill_level(False)
+        strictness_hscale.connect("value_changed", strictness_changed)
+        table.attach(strictness_hscale, 1, 2, 2, 3)
+
         return table
 
     def _check_artist_played(self, artist):
@@ -109,8 +140,9 @@ class LastFMSimilarity(EventPlugin):
                 response = json.load(stream)
 
                 for track in response["similartracks"]["track"]:
-                    similar_tracks.append(
-                        (track["artist"]["name"], track["name"]))
+                    if track["match"] >= self._similarity_strictness:
+                        similar_tracks.append(
+                            (track["artist"]["name"], track["name"]))
 
                 return similar_tracks
 
@@ -153,7 +185,8 @@ class LastFMSimilarity(EventPlugin):
                 response = json.load(stream)
 
                 for artist in response["similarartists"]["artist"]:
-                    similar_artists.append(artist["name"])
+                    if artist["match"] >= self._similarity_strictness:
+                        similar_artists.append(artist["name"])
 
                 return similar_artists
 
@@ -180,6 +213,8 @@ class LastFMSimilarity(EventPlugin):
             candidates = self._find_similar_tracks(track, artist)
 
         if candidates:
+            random.shuffle(candidates)
+
             for candidate in candidates:
                 if not self._check_artist_played(candidate[0]):
 
@@ -214,12 +249,8 @@ class LastFMSimilarity(EventPlugin):
                     "&(artist = \"%s\", title != \"[silence]\")" % artist)
                 try:
                     results = filter(query.search, app.library)
-
-                    candidate_song_length = len(results)
-                    for dummy in xrange(candidate_song_length):
-                        idx = random.randint(0, (candidate_song_length - 1))
-                        song = results[idx]
-
+                    random.shuffle(results)
+                    for song in results:
                         if not self._check_track_played(song.get("~filename")):
                             app.window.playlist.enqueue([song])
                             return
