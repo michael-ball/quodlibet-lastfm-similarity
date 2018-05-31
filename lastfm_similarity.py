@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Last.fm similarity plugin for Quod Libet."""
 import json
+from urllib.parse import quote
 from urllib.request import urlopen
 from urllib.error import URLError
 import random
@@ -106,8 +107,8 @@ class LastFMSimilarity(EventPlugin):
         else:
             print_d("Trying with {} - {}".format(artistname.splitlines()[0],
                                                  trackname))
-            request = "".join((request, "&track=", trackname, "&artist=",
-                               artistname.splitlines()[0]))
+            request = "".join((request, "&track=", quote(trackname), "&artist=",
+                               quote(artistname.splitlines()[0])))
 
         request = "".join((request, "&limit={}".format(limit)))
 
@@ -151,7 +152,7 @@ class LastFMSimilarity(EventPlugin):
         else:
             print_d("Trying with {}".format(artistname.splitlines()[0]))
             request = "".join((request, "&artist=",
-                               artistname.splitlines()[0]))
+                               quote(artistname.splitlines()[0])))
 
         request = "".join((request, "&limit={}".format(limit)))
 
@@ -210,7 +211,6 @@ class LastFMSimilarity(EventPlugin):
                         % (candidate[0], candidate[1]))
                     try:
                         results = list(filter(query.search, app.library))
-                        print_d("results: %s" % results)
 
                         if results:
                             song = results[0]
@@ -234,7 +234,6 @@ class LastFMSimilarity(EventPlugin):
                     "&(artist = \"%s\", title != \"[silence]\")" % artist)
                 try:
                     results = list(filter(query.search, app.library))
-                    print_d("results: %s" % results)
 
                     candidate_song_length = len(results)
                     for dummy in range(candidate_song_length):
