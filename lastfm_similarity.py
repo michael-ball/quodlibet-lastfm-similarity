@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
+"""Last.fm similarity plugin for Quod Libet."""
 import json
-import urllib2
+from urllib.parse import quote
+from urllib.request import urlopen
+from urllib.error import URLError
 import random
 
 from gi.repository import GLib, Gtk
@@ -13,6 +16,8 @@ from quodlibet.util.dprint import print_d
 
 
 class LastFMSimilarity(EventPlugin):
+    """Last.fm similarity event plugin."""
+
     PLUGIN_ID = "Last.fm Similarity"
     PLUGIN_NAME = _("Last.fm Similarity")
     PLUGIN_DESC = _("Finds a similar song using Last.fm's track similarity API"
@@ -28,6 +33,7 @@ class LastFMSimilarity(EventPlugin):
     }
 
     def __init__(self):
+        """Initialize the plugin."""
         self._blacklist_track_count = config.getint(
             "plugins", "lastfm_similarity_blacklist_tracks", 10)
         self._blacklist_artist_count = config.getint(
@@ -38,6 +44,7 @@ class LastFMSimilarity(EventPlugin):
         self._last_artists = []
 
     def PluginPreferences(self, parent):
+        """Plugin Preferences."""
         def blacklist_track_changed(entry):
             self._blacklist_track_count = int(entry.get_value())
             config.set("plugins", "lastfm_similarity_blacklist_tracks",
@@ -56,18 +63,18 @@ class LastFMSimilarity(EventPlugin):
         table = Gtk.Table(rows=3, columns=2)
         table.set_row_spacings(6)
         table.set_col_spacings(6)
-        track_label = Gtk.Label(label=_(
-            "Number of recently played tracks to blacklist:"))
-        track_label.set_alignment(1.0, 0.0)
-        table.attach(track_label, 0, 1, 0, 1, xoptions=Gtk.AttachOptions.FILL)
+        table.attach(
+            Gtk.Label(
+                label=_("Number of recently played tracks to blacklist:")),
+            0, 1, 0, 1)
         track_entry = Gtk.SpinButton(adjustment=Gtk.Adjustment.new(
             self._blacklist_track_count, 0, 1000, 1, 10, 0))
         track_entry.connect("value-changed", blacklist_track_changed)
         table.attach(track_entry, 1, 2, 0, 1)
-        artist_label = Gtk.Label(label=_(
-            "Number of recently played artists to blacklist:"))
-        artist_label.set_alignment(1.0, 0)
-        table.attach(artist_label, 0, 1, 1, 2, xoptions=Gtk.AttachOptions.FILL)
+        table.attach(
+            Gtk.Label(
+                label=_("Number of recently played artists to blacklist:")),
+            0, 1, 1, 2)
         artist_entry = Gtk.SpinButton(adjustment=Gtk.Adjustment.new(
             self._blacklist_artist_count, 0, 1000, 1, 10, 0))
         artist_entry.connect("value-changed", blacklist_artist_changed)
@@ -89,7 +96,7 @@ class LastFMSimilarity(EventPlugin):
 
     def _check_artist_played(self, artist):
         for played_artist in self._last_artists:
-            if unicode(artist).upper() == played_artist.upper():
+            if artist.upper() == played_artist.upper():
                 return True
 
         return False
@@ -119,8 +126,8 @@ class LastFMSimilarity(EventPlugin):
         else:
             print_d("Trying with {} - {}".format(artistname.splitlines()[0],
                                                  trackname))
-            request = "".join((request, "&track=", trackname, "&artist=",
-                               artistname.splitlines()[0]))
+            request = "".join((request, "&track=", quote(trackname), "&artist=",
+                               quote(artistname.splitlines()[0])))
 
         request = "".join((request, "&limit={}".format(limit)))
 
@@ -129,15 +136,15 @@ class LastFMSimilarity(EventPlugin):
         stream = None
 
         try:
-            stream = urllib2.urlopen(uri)
-        except urllib2.URLError:
+            stream = urlopen(uri)
+        except URLError:
             return []
 
         if stream.getcode() == 200:
             similar_tracks = []
 
             try:
-                response = json.load(stream)
+                response = json.loads(str(stream.read(), "utf-8"))
 
                 for track in response["similartracks"]["track"]:
                     if track["match"] >= self._similarity_strictness:
@@ -165,7 +172,7 @@ class LastFMSimilarity(EventPlugin):
         else:
             print_d("Trying with {}".format(artistname.splitlines()[0]))
             request = "".join((request, "&artist=",
-                               artistname.splitlines()[0]))
+                               quote(artistname.splitlines()[0])))
 
         request = "".join((request, "&limit={}".format(limit)))
 
@@ -174,15 +181,15 @@ class LastFMSimilarity(EventPlugin):
         stream = None
 
         try:
-            stream = urllib2.urlopen(uri)
-        except urllib2.URLError:
+            stream = urlopen(uri)
+        except URLError:
             return []
 
         if stream.getcode() == 200:
             similar_artists = []
 
             try:
-                response = json.load(stream)
+                response = json.loads(str(stream.read(), "utf-8"))
 
                 for artist in response["similarartists"]["artist"]:
                     if artist["match"] >= self._similarity_strictness:
@@ -200,6 +207,7 @@ class LastFMSimilarity(EventPlugin):
             return []
 
     def on_change(self, song):
+        """Find similar track on song change."""
         artist = song.get("artist").splitlines()[0]
         track = song.get("title")
 
@@ -225,7 +233,7 @@ class LastFMSimilarity(EventPlugin):
                         "&(artist = \"%s\", title = \"%s\")"
                         % (candidate[0], candidate[1]))
                     try:
-                        results = filter(query.search, app.library)
+                        results = list(filter(query.search, app.library))
 
                         if results:
                             song = results[0]
@@ -248,9 +256,13 @@ class LastFMSimilarity(EventPlugin):
                 query = Query.StrictQueryMatcher(
                     "&(artist = \"%s\", title != \"[silence]\")" % artist)
                 try:
-                    results = filter(query.search, app.library)
-                    random.shuffle(results)
-                    for song in results:
+                    results = list(filter(query.search, app.library))
+
+                    candidate_song_length = len(results)
+                    for dummy in range(candidate_song_length):
+                        idx = random.randint(0, (candidate_song_length - 1))
+                        song = results[idx]
+
                         if not self._check_track_played(song.get("~filename")):
                             app.window.playlist.enqueue([song])
                             return
@@ -259,13 +271,14 @@ class LastFMSimilarity(EventPlugin):
                     pass
 
     def plugin_on_song_started(self, song):
+        """Append current track to last played tracks and artists."""
         self._last_tracks.append(song.get("~filename"))
         self._add_played_artists(song.get("artist").splitlines())
 
         GLib.idle_add(self.on_change, song)
 
     def plugin_on_song_ended(self, song, stopped):
-
+        """Append current track to last played tracks and artists."""
         track_count = len(self._last_tracks)
         artist_count = len(self._last_artists)
 
@@ -276,3 +289,4 @@ class LastFMSimilarity(EventPlugin):
         if artist_count > self._blacklist_artist_count:
             self._last_artists = self._last_artists[
                 (artist_count - self._blacklist_artist_count):artist_count]
+
