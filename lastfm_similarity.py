@@ -58,7 +58,7 @@ class LastFMSimilarity(EventPlugin):
         def strictness_changed(entry):
             self._similarity_strictness = entry.get_value() / 10
             config.set("plugins", "lastfm_similarity_strictness",
-                       self._track_similarity_strictness)
+                       self._similarity_strictness)
 
         table = Gtk.Table(rows=3, columns=2)
         table.set_row_spacings(6)
@@ -126,8 +126,8 @@ class LastFMSimilarity(EventPlugin):
         else:
             print_d("Trying with {} - {}".format(artistname.splitlines()[0],
                                                  trackname))
-            request = "".join((request, "&track=", quote(trackname), "&artist=",
-                               quote(artistname.splitlines()[0])))
+            request = "".join((request, "&track=", quote(trackname),
+                               "&artist=", quote(artistname.splitlines()[0])))
 
         request = "".join((request, "&limit={}".format(limit)))
 
@@ -147,7 +147,9 @@ class LastFMSimilarity(EventPlugin):
                 response = json.loads(str(stream.read(), "utf-8"))
 
                 for track in response["similartracks"]["track"]:
-                    if track["match"] >= self._similarity_strictness:
+                    similarity_score = float(track["match"])
+
+                    if similarity_score >= self._similarity_strictness:
                         similar_tracks.append(
                             (track["artist"]["name"], track["name"]))
 
@@ -157,6 +159,8 @@ class LastFMSimilarity(EventPlugin):
                 if mbid:
                     return self._find_similar_tracks(trackname, artistname)
 
+                return []
+            except (ValueError, OverflowError):
                 return []
 
         else:
@@ -192,7 +196,9 @@ class LastFMSimilarity(EventPlugin):
                 response = json.loads(str(stream.read(), "utf-8"))
 
                 for artist in response["similarartists"]["artist"]:
-                    if artist["match"] >= self._similarity_strictness:
+                    similarity_score = float(artist["match"])
+
+                    if similarity_score >= self._similarity_strictness:
                         similar_artists.append(artist["name"])
 
                 return similar_artists
@@ -201,6 +207,8 @@ class LastFMSimilarity(EventPlugin):
                 if mbid:
                     return self._find_similar_artists(artistname)
 
+                return []
+            except (ValueError, OverflowError):
                 return []
 
         else:
