@@ -142,6 +142,7 @@ class LastFMSimilarity(EventPlugin):
 
         if stream.getcode() == 200:
             similar_tracks = []
+            track_weights = []
 
             try:
                 response = json.loads(str(stream.read(), "utf-8"))
@@ -152,8 +153,9 @@ class LastFMSimilarity(EventPlugin):
                     if similarity_score >= self._similarity_strictness:
                         similar_tracks.append(
                             (track["artist"]["name"], track["name"]))
+                        track_weights.append(similarity_score)
 
-                return similar_tracks
+                return similar_tracks, track_weights
 
             except KeyError:
                 if mbid:
@@ -191,6 +193,7 @@ class LastFMSimilarity(EventPlugin):
 
         if stream.getcode() == 200:
             similar_artists = []
+            artist_weights = []
 
             try:
                 response = json.loads(str(stream.read(), "utf-8"))
@@ -200,8 +203,9 @@ class LastFMSimilarity(EventPlugin):
 
                     if similarity_score >= self._similarity_strictness:
                         similar_artists.append(artist["name"])
+                        artist_weights.append(similarity_score)
 
-                return similar_artists
+                return similar_artists, artist_weights
 
             except KeyError:
                 if mbid:
@@ -220,22 +224,21 @@ class LastFMSimilarity(EventPlugin):
         track = song.get("title")
 
         candidates = []
+        weights = []
 
         try:
             mbid = song.get("musicbrainz_releasetrackid")
 
-            candidates = self._find_similar_tracks(track, artist, mbid)
+            candidates, weights = self._find_similar_tracks(
+                track, artist, mbid)
         except KeyError:
-            candidates = self._find_similar_tracks(track, artist)
+            candidates, weights = self._find_similar_tracks(track, artist)
 
+        found_tracks = []
+        found_track_weights = []
         if candidates:
-            random.shuffle(candidates)
-
-            for candidate in candidates:
+            for idx, candidate in enumerate(candidates):
                 if not self._check_artist_played(candidate[0]):
-
-                    print_d("[similarity] found track match: %s - %s"
-                            % (candidate[0], candidate[1]))
 
                     query = Query.StrictQueryMatcher(
                         "&(artist = \"%s\", title = \"%s\")"
@@ -249,17 +252,42 @@ class LastFMSimilarity(EventPlugin):
                             if self._check_track_played(song.get("~filename")):
                                 continue
 
-                            app.window.playlist.enqueue([song])
+                            print_d("[similarity] found track match: %s - %s"
+                                    % (candidate[0], candidate[1]))
 
-                            return
+                            found_tracks.append(song)
+                            found_track_weights.append(weights[idx])
                     except AttributeError:
                         pass
 
-        artist_candidates = self._find_similar_artists(artist)
+        if found_tracks:
+            selected_track = random.choices(
+                found_tracks, found_track_weights, k=1)[0]
+            app.window.playlist.enqueue([selected_track])
+            return
 
-        for artist in artist_candidates:
+        artist_candidates, artist_weights = self._find_similar_artists(artist)
+
+        found_artists = []
+        found_artist_weights = []
+
+        for idx, artist in enumerate(artist_candidates):
             if not self._check_artist_played(artist):
                 print_d("[similarity] found artist match: %s" % artist)
+
+                found_artists.append(artist)
+                found_artist_weights.append(artist_weights[idx])
+
+        while True:
+            if found_artists:
+                artist = random.choices(
+                    found_artists, found_artist_weights, k=1)[0]
+
+                for idx, a in enumerate(found_artists):
+                    if a == artist:
+                        found_artist_weights.pop(idx)
+
+                found_artists.remove(artist)
 
                 query = Query.StrictQueryMatcher(
                     "&(artist = \"%s\", title != \"[silence]\")" % artist)
@@ -277,6 +305,8 @@ class LastFMSimilarity(EventPlugin):
 
                 except AttributeError:
                     pass
+            else:
+                return
 
     def plugin_on_song_started(self, song):
         """Append current track to last played tracks and artists."""
